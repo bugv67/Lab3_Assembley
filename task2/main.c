@@ -9,21 +9,65 @@
 #define O_RDONLY 0
 
 /* Linux kernel dirent structure for 32-bit systems */
-struct linux_dirent
+struct directory
 {
-    unsigned long d_ino;     /* Inode number */
-    unsigned long d_off;     /* Offset to next linux_dirent */
-    unsigned short d_reclen; /* Length of this linux_dirent */
-    char d_name[];           /* Filename (null-terminated) */
+    unsigned long id;     /* Id number */
+    unsigned long offset; /* Offset to next dirct in the disk */
+    unsigned short length;
+    char d_name[]; /* Filename (null-terminated) */
 };
 
 int main(int argc, char *argv[])
 {
     int i;
     char prefix = 0;
-    int has_prefix = 0;
+    int has_prefix = 0; // indicator
     int fd;
-    int nread;
-    int bpos = 0;
-    char buf[8192];
+    int numread;
+    int bfpos = 0;
+    char buf[8192]; // buffer for getdents
+
+    // loop the arguments to find any prefix if it exists!!
+    for (i = 1; i < argc; i++)
+    {
+        if (argv[i][0] == '-' && argv[i][1] == 'a')
+        {
+            prefix = argv[i][2]; // Get the 1-character prefix after "-a"
+            has_prefix = 1;
+        }
+    }
+
+    // open current directory
+    // sys: what to do, where, how- flags, extra
+    // sys_open: eax=5, ebx=filename, ecx=flags, edx=mode
+    fd = system_call(SYS_OPEN, ".", O_RDONLY, 0); // for reading only
+    if (fd < 0)
+    { // error
+        system_call(SYS_EXIT, 0x55);
+    }
+    // now read the files
+    numread = system_call(SYS_GETDENTS, fd, buf, 8192);
+    if (numread <= 0)
+    {
+        system_call(SYS_EXIT, 0x55); /* Terminate with 0x55 on error */
+    }
+    while (bfpos < numread)
+    {
+        struct directory *d = (struct directory *)(buf + bfpos);
+        char *filename = d->d_name;
+
+        if (!has_prefix || filename[0] == prefix)
+        {
+            // print the filename using system call
+            // sys_write: eax=4, ebx=file, ecx=buffer, edx=count
+            system_call(SYS_WRITE, 1, filename, strlen(filename));
+            system_call(SYS_WRITE, 1, "\n", 1);
+        }
+
+        bfpos += d->length;
+    }
+
+    // close the file
+    system_call(SYS_CLOSE, fd);
+    return 0;
 }
