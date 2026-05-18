@@ -3,6 +3,8 @@ section .rodata
 section .data
     Infile  dd 0    ; File  for stdin
     Outfile dd 1    ; File  for stdout
+    KeyPointer  dd 0    ; encoder key: +V
+    CurrKeyPtr  dd 0    ; current position in the key
 
 section .bss
     char_buf resb 1   ; a reserve for the char well read
@@ -21,6 +23,19 @@ main:  ; prints all args to strout
     cmp esi, 0              ; check if esi is 0
     jz end_loop             ; if 0 we jump to end
 
+    ; check if +V aka the encode key
+    mov edx, [edi]          ; current argv
+    cmp byte [edx], '+'     ; if(argv[0][0]==+)
+    jne not_key
+    cmp byte [edx+1], 'V'   ; if(argv[0][1]==+)
+    jne not_key
+    
+    ; is key!!
+    add edx, 2              ;  skip the +v
+    mov [KeyPointer], edx   ; save
+    mov [CurrKeyPtr], edx   
+
+not_key:
     ;else contine             
     push dword [edi]        ; save currnt pinter to the stack
     call strlen             ; call helper returning length
@@ -41,7 +56,7 @@ main:  ; prints all args to strout
     ; next round in loop
     add edi, 4         ; move pointer to the next argv
     dec esi            ; esi--
-    jmp print_loop     ; jump to the start           
+    jmp print_loop     ; jump to the start            
 
 end_loop:
     call encode        ; activate the encoder!
@@ -65,6 +80,31 @@ encode_loop:
     cmp eax, 0              ; how many we read
     jz end_encode           ; if 0 we jump to end
 
+    ; ---- לוגיקת הצפנת ויז'נר (הועברה למקום הנכון!) ----
+    mov edx, [KeyPointer]
+    cmp edx, 0              ; נבדוק אם המשתמש בכלל סיפק מפתח בשורת הפקודה
+    jz skip_encryption      ; אם אין מפתח, נדלג ישר להדפסה הרגילה
+
+    mov ebx, [CurrKeyPtr]   ; נשלוף את המצביע לתו הנוכחי במפתח
+    mov cl, [ebx]           ; cl יחזיק את תו המפתח הנוכחי
+    
+    cmp cl, 0               ; האם הגענו לסוף מחרוזת המפתח (תו null)?
+    jnz shift
+    
+    ; אם הגענו לסוף המפתח, נחזור חזרה להתחלה (Wrap around)
+    mov ebx, [KeyPointer]
+    mov cl, [ebx]
+    mov [CurrKeyPtr], ebx   ; נעדכן את המצביע הדינמי חזרה להתחלה
+
+shift:
+    sub cl, '0'             ; נהפוך את תו המפתח למספר (למשל התו '1' יהפוך למספר 1)
+    mov al, [char_buf]      ; נשלוף את התו שקראנו מהמקלדת
+    add al, cl              ; נבצע את ההצפנה: נוסיף את ערך המפתח לתו
+    mov [char_buf], al      ; נשמור את התו המוצפן חזרה בחוצץ
+    
+    inc dword [CurrKeyPtr]  ; נקדם את המצביע של המפתח לתו הבא עבור הסיבוב הבא
+
+skip_encryption:
     ; sys_write
     mov eax, 4              ; sys_write: eax=4
     mov ebx, [Outfile]      ; target: ebx
@@ -75,6 +115,6 @@ encode_loop:
     jmp encode_loop         ; next round in loop
 
 end_encode:
-    mov esp, ebp            ; restore stack pointer
+    mov esp, ebp            ; restore stack 
     pop ebp                 ; restore ebp
     ret                     ; return to main
