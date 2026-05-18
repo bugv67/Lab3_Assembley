@@ -1,23 +1,19 @@
-# הגדרות קומפילציה ל-32 ביט ללא ספריות סטנדרטיות
-CC = gcc
-CFLAGS = -m32 -fno-pie -Wall -nostdlib -fno-stack-protector
-ASM = nasm
-ASMFLAGS = -f elf32
-
 
 all: task2
 
-task2: main.o start.o util.o
-	$(CC) $(CFLAGS) -o task2 main.o start.o util.o
+task2: start.o main.o util.o
+	ld -m elf_i386 start.o main.o util.o -o task2
 
 main.o: main.c
-	$(CC) $(CFLAGS) -c -o main.o main.c
+	gcc -m32 -Wall -ansi -c -nostdlib -fno-stack-protector main.c -o main.o
 
-util.o: util.c
-	$(CC) $(CFLAGS) -c -o util.o util.c
 
 start.o: start.s
-	$(ASM) $(ASMFLAGS) -o start.o start.s
+	nasm -f elf32 start.s -o start.o
+
+util.o: util.c util.h
+	gcc -m32 -Wall -ansi -c -nostdlib -fno-stack-protector util.c -o util.o
+
 
 clean:
 	rm -f *.o task2
