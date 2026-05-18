@@ -25,4 +25,4 @@ util.o: util.c
 	gcc -m32 -Wall -ansi -c -nostdlib -fno-stack-protector util.c -o util.o
 
 clean:
-	rm -f *.o task0 task1b
+	rm -f *.o task0 task1a

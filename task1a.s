@@ -1,8 +1,8 @@
 section .rodata
     newline db 10  ; the char for /n
 section .data
-    Infile  dd 0    ; File  for stdin
-    Outfile dd 1    ; File  for stdout
+    Infile  dd 0    ; File  for stdin (default)
+    Outfile dd 1    ; File  for stdout (default)
     KeyPointer  dd 0    ; encoder key: +V
     CurrKeyPtr  dd 0    ; current position in the key
 
@@ -26,16 +26,46 @@ main:  ; prints all args to strout
     ; check if +V aka the encode key
     mov edx, [edi]          ; current argv
     cmp byte [edx], '+'     ; if(argv[0][0]==+)
-    jne not_key
-    cmp byte [edx+1], 'V'   ; if(argv[0][1]==+)
-    jne not_key
+    jne check_minus
+    cmp byte [edx+1], 'V'   ; if(argv[0][1]==V)
+    jne check_minus
     
     ; is key!!
     add edx, 2              ;  skip the +v
     mov [KeyPointer], edx   ; save
     mov [CurrKeyPtr], edx   
+    jmp finished_arg_check
 
-not_key:
+check_minus:
+    ; sys open: eax=5, ebx=filename, ecx=flags, edx=mode
+    cmp byte [edx], '-'
+    jne finished_arg_check
+    cmp byte [edx+1], 'i'   ; check for -i{fileName}
+    je handle_infile
+    cmp byte [edx+1], 'o'   ; check for -o{fileName}
+    je handle_outfile
+    jmp finished_arg_check
+
+handle_infile:
+    add edx, 2              ; skip "-i" to get the filename pointer
+    mov eax, 5              ; sys_open
+    mov ebx, edx            ; ebx = filename string
+    mov ecx, 0              ; ecx = O_RDONLY
+    mov edx, 0              ; edx = mode (not needed for reading)
+    int 0x80                ; activate sys_open
+    mov [Infile], eax       ; save the returned file descriptor to Infile
+    jmp finished_arg_check
+
+handle_outfile:
+    add edx, 2              ; skip "-o" to get the filename pointer
+    mov eax, 5              ; sys_open
+    mov ebx, edx            ; ebx = filename string
+    mov ecx, 0x241          ; ecx = O_WRONLY | O_CREAT | O_TRUNC
+    mov edx, 420            ; edx = permissions (0644 in octal)
+    int 0x80                ; activate sys_open
+    mov [Outfile], eax      ; save the returned file descriptor to Outfile
+
+finished_arg_check:
     ;else contine             
     push dword [edi]        ; save currnt pinter to the stack
     call strlen             ; call helper returning length
@@ -78,31 +108,37 @@ encode_loop:
 
     ; if(length=0)
     cmp eax, 0              ; how many we read
-    jz end_encode           ; if 0 we jump to end
+   jle end_encode           ; if 0 or negative, we are done (end of file or error)
 
-    ; ---- לוגיקת הצפנת ויז'נר (הועברה למקום הנכון!) ----
+    ; ----  encryption logic ----
     mov edx, [KeyPointer]
-    cmp edx, 0              ; נבדוק אם המשתמש בכלל סיפק מפתח בשורת הפקודה
-    jz skip_encryption      ; אם אין מפתח, נדלג ישר להדפסה הרגילה
+    cmp edx, 0              ; check if key=!null
+    jz skip_encryption      ; if no key, just print as is
 
-    mov ebx, [CurrKeyPtr]   ; נשלוף את המצביע לתו הנוכחי במפתח
-    mov cl, [ebx]           ; cl יחזיק את תו המפתח הנוכחי
+    mov ebx, [CurrKeyPtr]   ; get current running key pointer
+    mov cl, [ebx]           ; read the current key byte
     
-    cmp cl, 0               ; האם הגענו לסוף מחרוזת המפתח (תו null)?
+    cmp cl, 0               ; check if we reached end of key string (\0)
     jnz shift
     
-    ; אם הגענו לסוף המפתח, נחזור חזרה להתחלה (Wrap around)
+    ; wrap around to the beginning of the key
     mov ebx, [KeyPointer]
     mov cl, [ebx]
-    mov [CurrKeyPtr], ebx   ; נעדכן את המצביע הדינמי חזרה להתחלה
+    mov [CurrKeyPtr], ebx
 
 shift:
-    sub cl, '0'             ; נהפוך את תו המפתח למספר (למשל התו '1' יהפוך למספר 1)
-    mov al, [char_buf]      ; נשלוף את התו שקראנו מהמקלדת
-    add al, cl              ; נבצע את ההצפנה: נוסיף את ערך המפתח לתו
-    mov [char_buf], al      ; נשמור את התו המוצפן חזרה בחוצץ
+    sub cl, '0'             ; convert key char to numerical shift value
+    mov al, [char_buf]      ; get the char we read from stdin
     
-    inc dword [CurrKeyPtr]  ; נקדם את המצביע של המפתח לתו הבא עבור הסיבוב הבא
+    ; check if it's a lowercase letter!!!
+    cmp al, 'a'             ; smaller then 'a'
+    jl skip_encryption      ; if so, it's not a lowercase letter - skip encryption and print as is
+    cmp al, 'z'             
+    jg skip_encryption      
+
+    add al, cl              ; apply encryption shift
+    mov [char_buf], al      ; save encrypted char back to buffer
+    inc dword [CurrKeyPtr]  ; advance key pointer for next char
 
 skip_encryption:
     ; sys_write
@@ -115,6 +151,6 @@ skip_encryption:
     jmp encode_loop         ; next round in loop
 
 end_encode:
-    mov esp, ebp            ; restore stack 
+    mov esp, ebp            ; restore stack pointer
     pop ebp                 ; restore ebp
     ret                     ; return to main
